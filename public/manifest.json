@@ -1,0 +1,13 @@
+{
+  "name": "Tránsito Canelones - Gestión de Infracciones",
+  "short_name": "Tránsito Canelones",
+  "description": "Aplicación de gestión de infracciones de tránsito - Intendencia de Canelones",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#043c77",
+  "icons": [
+    { "src": "logo-canelones.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "logo-canelones.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

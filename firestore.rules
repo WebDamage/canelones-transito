@@ -1,0 +1,77 @@
+rules_version = '2';
+
+// Fase 5: reglas endurecidas con Custom Claims.
+//
+// Desde que existen las Cloud Functions login/gestionarUsuario/
+// cambiarActivoUsuario (ver functions/index.js), el rol de cada sesión ya
+// no es "lo que el cliente dice que es" — lo graba el servidor en
+// request.auth.token.rol después de validar la cédula contra /usuarios. Acá
+// abajo esas reglas confían en ese claim para restringir de verdad quién
+// puede leer o escribir qué, cosa que en las Fases 1-4 no era posible.
+//
+// IMPORTANTE: esto requiere que las Cloud Functions estén desplegadas y que
+// el cliente llame a login() y refresque su ID token antes de leer/escribir
+// nada (ver AuthContext.jsx). Mientras tanto, o si se despliegan estas
+// reglas sin las functions, todo va a fallar por falta de claims — no hay
+// fallback a "cualquier autenticado" como en las fases anteriores.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function rol() { return request.auth.token.rol; }
+    function cedulaSesion() { return request.auth.token.cedula; }
+    function esBackoffice() { return rol() in ['Administrador', 'Supervisor', 'Administrativo']; }
+
+    // Catálogo de infracciones: lectura para cualquier sesión con rol
+    // asignado, sin escritura desde el cliente.
+    match /infracciones/{codigo} {
+      allow read: if request.auth != null && rol() != null;
+      allow write: if false;
+    }
+
+    // Usuarios: cada quien puede leer su propio documento (lo necesita para
+    // ver su nombre/equipo); el backoffice puede leer la lista completa
+    // para los selectores de filtro. Sin escritura directa desde el
+    // cliente — el alta/edición/baja pasan por las Cloud Functions, que
+    // escriben con privilegios de administrador.
+    match /usuarios/{cedula} {
+      allow read: if request.auth != null && (cedulaSesion() == cedula || esBackoffice());
+      allow write: if false;
+    }
+
+    // Multas: un Inspector solo puede crear boletas propias y ver las
+    // suyas (ahora sí se puede exigir esto, con la cédula verificada en el
+    // token). El backoffice ve y filtra todo. El estado administrativo
+    // (pagada/impugnada/anulada) solo lo cambian Administrador y
+    // Administrativo — Supervisor queda de solo lectura, como pide la
+    // especificación.
+    match /multas/{multaId} {
+      allow read: if request.auth != null
+                   && (esBackoffice() || (rol() == 'Inspector' && resource.data.inspectorCedula == cedulaSesion()));
+      allow create: if request.auth != null
+                     && rol() == 'Inspector'
+                     && request.resource.data.inspectorCedula == cedulaSesion();
+      allow update: if request.auth != null
+                     && rol() in ['Administrador', 'Administrativo']
+                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estadoAdministrativo']);
+      allow delete: if false;
+    }
+
+    // Ubicación en vivo: cada inspector solo puede escribir su propio
+    // documento; el backoffice puede leer todos para el mapa.
+    match /ubicaciones/{cedula} {
+      allow read: if request.auth != null && (esBackoffice() || cedulaSesion() == cedula);
+      allow write: if request.auth != null && rol() == 'Inspector' && cedulaSesion() == cedula;
+    }
+
+    // Auditoría: cualquier sesión con rol puede agregar un evento (el
+    // registro de las acciones que hace el propio cliente — ver la nota en
+    // el README sobre qué tan confiable es esto), pero solo Administrador
+    // puede leer el historial. Sin edición ni borrado, para que sea un
+    // registro de verdad.
+    match /auditoria/{eventoId} {
+      allow read: if request.auth != null && rol() == 'Administrador';
+      allow create: if request.auth != null && rol() != null;
+      allow update, delete: if false;
+    }
+  }
+}

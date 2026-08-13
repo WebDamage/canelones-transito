@@ -1,0 +1,31 @@
+// Catálogo de infracciones — bundleado en la app (no solo en Firestore) para
+// que el formulario funcione offline desde la primera carga, sin depender de
+// una consulta a la nube en el momento de labrar la boleta.
+// Verificado contra manual_infracciones_transito_canelones.pdf (SUCIVE / IC).
+// Si el catálogo cambia, actualizar acá y en scripts/seed/infracciones.json.
+const INFRACCIONES = [
+  { codigo: '3.1.1', descripcion: 'Conducir con licencia de conducir suspendida o vencida', gravedad: 'Muy Grave', tipo: 'General' },
+  { codigo: '3.1.2', descripcion: 'Conducir sin poseer habilitación o permiso de conducir', gravedad: 'Muy Grave', tipo: 'General' },
+  { codigo: '3.4', descripcion: 'Circular sin Documento de Identificación Vehicular (DIV / Libreta)', gravedad: 'Leve', tipo: 'General' },
+  { codigo: '4.2.1', descripcion: 'Conducir bajo los efectos del alcohol (Tolerancia Cero)', gravedad: 'Muy Grave', tipo: 'General' },
+  { codigo: '4.2.2', descripcion: 'Conducir bajo los efectos de estupefacientes o drogas', gravedad: 'Muy Grave', tipo: 'General' },
+  { codigo: '4.8', descripcion: 'No utilización del cinturón de seguridad (conductor o pasajeros)', gravedad: 'Grave', tipo: 'General' },
+  { codigo: '4.9.1', descripcion: 'Transportar menores de 12 años en el asiento delantero', gravedad: 'Grave', tipo: 'General' },
+  { codigo: '4.9.2', descripcion: 'Transportar niños sin el Sistema de Retención Infantil (SRI)', gravedad: 'Grave', tipo: 'General' },
+  { codigo: '10.2', descripcion: 'No respetar la indicación de la luz roja del semáforo', gravedad: 'Muy Grave', tipo: 'General' },
+  { codigo: '10.3', descripcion: 'No respetar carteles de preferencia de paso (PARE / CEDA EL PASO)', gravedad: 'Grave', tipo: 'General' },
+  { codigo: '13.3A', descripcion: 'Exceso de velocidad hasta en 20 km/h por encima del límite', gravedad: 'Grave', tipo: 'Velocidad' },
+  { codigo: '13.3B', descripcion: 'Exceso de velocidad entre 21 km/h y 30 km/h por encima del límite', gravedad: 'Grave', tipo: 'Velocidad' },
+  { codigo: '13.3C', descripcion: 'Exceso de velocidad de más de 30 km/h (sin duplicar el límite)', gravedad: 'Muy Grave', tipo: 'Velocidad' },
+  { codigo: '13.3D', descripcion: 'Exceso de velocidad que duplica o supera el doble de lo permitido', gravedad: 'Muy Grave', tipo: 'Velocidad' },
+  { codigo: '21.3.1', descripcion: 'No usar casco protector homologado (motos y ciclomotores)', gravedad: 'Grave', tipo: 'General' },
+  { codigo: '108.1', descripcion: 'Estacionamiento o detención generando peligro o serios trastornos a la libre circulación urbana', gravedad: 'Grave', tipo: 'Estacionamiento' },
+  { codigo: '108.2A', descripcion: 'Estacionar el vehículo a contramano (orientado en sentido contrario al tránsito de la calle)', gravedad: 'Grave', tipo: 'Estacionamiento' },
+  { codigo: '108.2B', descripcion: 'Estacionar el vehículo separado a más de 30 centímetros del cordón de la acera', gravedad: 'Leve', tipo: 'Estacionamiento' },
+  { codigo: '110', descripcion: 'Estacionar en un lugar expresamente prohibido, espacios reservados, paradas de ómnibus o zonas delimitadas para carga y descarga', gravedad: 'Grave', tipo: 'Estacionamiento' },
+  { codigo: '111', descripcion: 'Estacionar obstruyendo directamente entradas de garajes, rampas de accesibilidad, bicisendas o sobre la vereda (acera)', gravedad: 'Grave', tipo: 'Estacionamiento' },
+]
+
+export default INFRACCIONES
+
+export const GRAVEDAD_ORDEN = { 'Leve': 0, 'Grave': 1, 'Muy Grave': 2 }

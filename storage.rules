@@ -1,0 +1,24 @@
+rules_version = '2';
+
+// Fotos, video y firma de cada boleta viven en multas/{uuid}/*. Ya con
+// Custom Claims (Fase 5): solo Inspector puede subir, y cualquier sesión
+// del backoffice puede leer para ver la evidencia en la ficha de detalle.
+// Storage Rules no puede consultar Firestore para saber de quién es la
+// boleta {uuid}, así que no se restringe la subida a "solo el inspector
+// dueño de esa boleta" acá — esa garantía la da igual firestore.rules sobre
+// el documento de la multa (el Storage.uuid es el mismo Firestore.uuid).
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /multas/{uuid}/{archivo} {
+      allow read: if request.auth != null
+                   && request.auth.token.rol in ['Administrador', 'Supervisor', 'Administrativo', 'Inspector'];
+      allow create: if request.auth != null
+                     && request.auth.token.rol == 'Inspector'
+                     && request.resource.size < 15 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
