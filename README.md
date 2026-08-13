@@ -79,17 +79,31 @@ esqueleto sin depender de tener ya un proyecto Firebase creado.
 
 Pasos comunes a los dos métodos de abajo:
 
-1. En `vite.config.js`, cambiar `REPO_NAME` por el nombre real del
-   repositorio (por ejemplo, si el repo es `github.com/tu-org/transito-canelones`,
-   `REPO_NAME = 'transito-canelones'`). Si el sitio va a vivir en la raíz de
-   un dominio propio en vez de `usuario.github.io/repo`, poné `'/'`.
+1. **En `vite.config.js`, `REPO_NAME` tiene que ser EXACTAMENTE el nombre del
+   repositorio en GitHub** (por ejemplo, si el repo es
+   `github.com/tu-org/canelones-transito`, `REPO_NAME = 'canelones-transito'`
+   — así viene puesto por defecto, cambialo solo si tu repo se llama
+   distinto). Si el sitio va a vivir en la raíz de un dominio propio en vez
+   de `usuario.github.io/repo`, poné `'/'`.
+
+   > ⚠️ **Causa más común de "la app no abre" / pantalla en blanco:** que
+   > `REPO_NAME` no coincida con el nombre real del repositorio. Vite arma
+   > las rutas de los archivos compilados (JS, CSS, el logo) usando ese
+   > nombre; si no coincide con la URL donde GitHub Pages sirve el sitio,
+   > esos archivos se piden en una ruta que no existe, GitHub Pages responde
+   > 404, y la página queda en blanco aunque el despliegue en sí no haya
+   > marcado ningún error. Se verifica fácil: abrí las herramientas de
+   > desarrollador del navegador (F12) → pestaña **Network**, recargá la
+   > página, y si ves varios 404 para archivos `.js`/`.css`, es esto. La
+   > solución es corregir `REPO_NAME` para que coincida con el nombre exacto
+   > del repositorio y volver a desplegar.
 2. Crear el repositorio en GitHub y subir el código:
    ```bash
    git init
    git add .
    git commit -m "Fases 1-5: esqueleto, boleta, panel, mapa y seguridad"
    git branch -M main
-   git remote add origin https://github.com/TU-ORGANIZACION/transito-canelones.git
+   git remote add origin https://github.com/TU-ORGANIZACION/canelones-transito.git
    git push -u origin main
    ```
    `.env` y las credenciales de Firebase quedan afuera automáticamente por
@@ -112,7 +126,7 @@ compila la app y la publica sola.
    **GitHub Actions** (no "Deploy from a branch").
 3. Hacer `git push` a `main`. En la pestaña **Actions** del repo se ve el
    progreso; cuando termina, el sitio queda publicado en
-   `https://TU-ORGANIZACION.github.io/transito-canelones/`.
+   `https://TU-ORGANIZACION.github.io/canelones-transito/`.
 4. De ahí en adelante, cada push a `main` vuelve a desplegar solo.
 
 > **Nota:** este workflow solo compila y publica el frontend estático en
