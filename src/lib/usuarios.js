@@ -1,8 +1,8 @@
-import { collection, getDocs } from 'firebase/firestore'
-import { httpsCallable } from 'firebase/functions'
-import { db, functions, firebaseReady } from './firebase'
+import { collection, getDocs, doc, setDoc, updateDoc } from 'firebase/firestore'
+import { db, firebaseReady } from './firebase'
 import { limpiarCedula } from './cedula'
 import { ROLES } from '../context/AuthContext'
+import { registrarEvento } from './auditoria'
 
 // Usuarios de muestra para poder ver la pantalla de gestión sin Firebase
 // configurado todavía — igual que con las multas, es solo para previsualizar.
@@ -22,19 +22,29 @@ export async function listarUsuarios() {
   return { items: snap.docs.map((d) => ({ cedula: d.id, ...d.data() })), demo: false }
 }
 
-// Alta/edición y baja/reactivación ya NO escriben directo a Firestore (las
-// reglas de la Fase 5 lo bloquean a propósito) — pasan por las Cloud
-// Functions gestionarUsuario / cambiarActivoUsuario, que corren con
-// privilegios de administrador y verifican que quien llama tenga
-// rol === 'Administrador' en su propio token antes de tocar nada.
-export async function guardarUsuario({ cedula, nombre, rol, equipo, activo }) {
+// Alta/edición y baja/reactivación escriben directo a Firestore. Las reglas
+// (ver firestore.rules) solo piden estar autenticado — sin Custom Claims no
+// se puede exigir "solo Administrador" del lado del servidor, así que ese
+// control queda a cargo de la interfaz (esta pantalla solo es accesible para
+// el rol Administrador, ver App.jsx). Es la limitación de seguridad conocida
+// del proyecto, documentada en el README: para cerrarla del todo hace falta
+// pasar a Cloud Functions + Custom Claims (ya armado en functions/, pero
+// requiere plan Blaze de Firebase).
+export async function guardarUsuario({ cedula, nombre, rol, equipo, activo }, actor) {
   if (!firebaseReady) throw new Error('Firebase no está configurado todavía.')
-  const fn = httpsCallable(functions, 'gestionarUsuario')
-  await fn({ cedula: limpiarCedula(cedula), nombre, rol, equipo: equipo || null, activo: activo !== false })
+  const cedulaLimpia = limpiarCedula(cedula)
+  await setDoc(doc(db, 'usuarios', cedulaLimpia), {
+    nombre,
+    rol,
+    equipo: rol === ROLES.INSPECTOR ? (equipo || null) : null,
+    activo: activo !== false,
+  }, { merge: true })
+  await registrarEvento('usuario_guardado', { cedula: cedulaLimpia, rol }, actor)
 }
 
-export async function cambiarActivo(cedula, activo) {
+export async function cambiarActivo(cedula, activo, actor) {
   if (!firebaseReady) throw new Error('Firebase no está configurado todavía.')
-  const fn = httpsCallable(functions, 'cambiarActivoUsuario')
-  await fn({ cedula: limpiarCedula(cedula), activo })
+  const cedulaLimpia = limpiarCedula(cedula)
+  await updateDoc(doc(db, 'usuarios', cedulaLimpia), { activo })
+  await registrarEvento('usuario_estado_cambiado', { cedula: cedulaLimpia, activo }, actor)
 }

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { httpsCallable } from 'firebase/functions'
+import { doc, getDoc } from 'firebase/firestore'
 import { signInAnonymously, signOut } from 'firebase/auth'
-import { auth, functions, firebaseReady } from '../lib/firebase'
+import { auth, db, firebaseReady } from '../lib/firebase'
 import { limpiarCedula } from '../lib/cedula'
 
 const SESSION_KEY = 'transitoCanelonesSesion'
@@ -13,8 +13,36 @@ export const ROLES = {
   SUPERVISOR: 'Supervisor',
   ADMINISTRADOR: 'Administrador',
 }
+const ROLES_VALIDOS = Object.values(ROLES)
 
 const AuthContext = createContext(null)
+
+// Login solo por cédula, sin verificación de servidor: lee /usuarios y
+// confía en lo que dice el documento. Es la limitación de seguridad conocida
+// del proyecto (ver README) — la alternativa (Custom Claims vía Cloud
+// Functions, ver functions/index.js) requiere el plan Blaze de Firebase, que
+// pide tarjeta, y por decisión explícita este prototipo corre sin eso.
+async function verificarCedula(cedula) {
+  if (!auth.currentUser) await signInAnonymously(auth)
+  const snap = await getDoc(doc(db, 'usuarios', cedula))
+  if (!snap.exists()) {
+    const err = new Error('Cédula no habilitada.')
+    err.code = 'permission-denied'
+    throw err
+  }
+  const datos = snap.data()
+  if (datos.activo === false) {
+    const err = new Error('Usuario dado de baja.')
+    err.code = 'permission-denied'
+    throw err
+  }
+  if (!ROLES_VALIDOS.includes(datos.rol)) {
+    const err = new Error('Rol inválido.')
+    err.code = 'failed-precondition'
+    throw err
+  }
+  return datos
+}
 
 export function AuthProvider({ children }) {
   const [sesion, setSesion] = useState(null)
@@ -30,18 +58,12 @@ export function AuthProvider({ children }) {
       } catch (e) { /* sin sesión previa */ }
 
       if (guardada && firebaseReady && !guardada.demo) {
-        // Volver a llamar a login() en cada carga de página (en vez de
-        // confiar en que el usuario anónimo y sus Custom Claims siguieron
-        // "vivos" entre recargas) es un poco más de tráfico, pero es lo que
-        // garantiza que el rol quede bien asignado sin importar cómo se
-        // comporte la persistencia de Firebase Auth en cada navegador —
-        // login() es idempotente y barata (una lectura a /usuarios).
+        // Se vuelve a verificar contra /usuarios en cada carga de página
+        // (en vez de confiar ciegamente en lo guardado en localStorage) para
+        // que una baja o un cambio de rol entre sesiones se refleje pronto.
         try {
-          if (!auth.currentUser) await signInAnonymously(auth)
-          const llamarLogin = httpsCallable(functions, 'login')
-          const resultado = await llamarLogin({ cedula: guardada.cedula })
-          await auth.currentUser.getIdToken(true)
-          guardada = { ...guardada, nombre: resultado.data.nombre, rol: resultado.data.rol, equipo: resultado.data.equipo || null }
+          const datos = await verificarCedula(guardada.cedula)
+          guardada = { ...guardada, nombre: datos.nombre || '', rol: datos.rol, equipo: datos.equipo || null }
           localStorage.setItem(SESSION_KEY, JSON.stringify(guardada))
         } catch (err) {
           // La cédula pudo haber sido dada de baja entre sesiones.
@@ -75,27 +97,14 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      if (!auth.currentUser) await signInAnonymously(auth)
-      // La verificación de la cédula y la asignación del rol pasan por la
-      // Cloud Function login() — corre con privilegios de administrador y
-      // es la única que puede grabar Custom Claims en el token de esta
-      // sesión. El cliente nunca decide su propio rol.
-      const llamarLogin = httpsCallable(functions, 'login')
-      const resultado = await llamarLogin({ cedula })
-      const { nombre, rol, equipo } = resultado.data
-
-      // Sin esto, el ID token en caché del cliente seguiría sin los claims
-      // recién asignados hasta que expire solo (hasta 1 hora).
-      await auth.currentUser.getIdToken(true)
-
-      const s = { cedula, nombre: nombre || '', rol, equipo: equipo || null }
+      const datos = await verificarCedula(cedula)
+      const s = { cedula, nombre: datos.nombre || '', rol: datos.rol, equipo: datos.equipo || null }
       localStorage.setItem(SESSION_KEY, JSON.stringify(s))
       setSesion(s)
       return { ok: true }
     } catch (err) {
       const mensaje = {
         'permission-denied': 'Cédula no habilitada o dada de baja.',
-        'invalid-argument': 'La cédula no es válida.',
         'failed-precondition': 'El usuario no tiene un rol válido asignado. Contactá a un administrador.',
       }[err.code] || 'No se pudo verificar la cédula. Revisá la conexión.'
       return { ok: false, error: mensaje }

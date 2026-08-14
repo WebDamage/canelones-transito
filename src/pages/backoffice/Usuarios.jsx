@@ -5,12 +5,13 @@ import Toast from '../../components/Toast'
 import { useToast } from '../../lib/useToast'
 import { listarUsuarios, guardarUsuario, cambiarActivo } from '../../lib/usuarios'
 import { validarCedulaUY } from '../../lib/cedula'
-import { ROLES } from '../../context/AuthContext'
+import { ROLES, useAuth } from '../../context/AuthContext'
 import { firebaseReady } from '../../lib/firebase'
 
 const FORM_VACIO = { cedula: '', nombre: '', rol: ROLES.INSPECTOR, equipo: '', activo: true }
 
 export default function Usuarios() {
+  const { sesion } = useAuth()
   const { toast, show } = useToast()
   const [items, setItems] = useState([])
   const [demo, setDemo] = useState(false)
@@ -36,7 +37,7 @@ export default function Usuarios() {
     if (!form.nombre.trim()) { show('Ingresá el nombre.', 'error'); return }
     setGuardando(true)
     try {
-      await guardarUsuario(form)
+      await guardarUsuario(form, { cedula: sesion?.cedula, nombre: sesion?.nombre })
       show('✓ Usuario guardado', 'success')
       setForm(null)
       cargar()
@@ -48,7 +49,7 @@ export default function Usuarios() {
 
   async function toggleActivo(u) {
     try {
-      await cambiarActivo(u.cedula, !u.activo)
+      await cambiarActivo(u.cedula, !u.activo, { cedula: sesion?.cedula, nombre: sesion?.nombre })
       cargar()
     } catch (err) {
       show('No se pudo actualizar: ' + err.message, 'error', 4000)

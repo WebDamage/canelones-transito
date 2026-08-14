@@ -12,7 +12,6 @@ import { initializeApp, getApps } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import { getFunctions } from 'firebase/functions'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
@@ -29,4 +28,11 @@ export const app = firebaseReady && !getApps().length ? initializeApp(firebaseCo
 export const auth = firebaseReady ? getAuth(app) : null
 export const db = firebaseReady ? getFirestore(app) : null
 export const storage = firebaseReady ? getStorage(app) : null
-export const functions = firebaseReady ? getFunctions(app) : null
+
+// Nota: no se usa Cloud Functions (firebase/functions) a propósito — habilitarlas
+// pide pasar el proyecto de Firebase al plan Blaze, que exige cargar una
+// tarjeta aunque el uso real termine costando $0. Para este prototipo el
+// login confía en /usuarios sin verificación de servidor (ver AuthContext.jsx
+// y la sección de seguridad del README); el código de verificación
+// server-side con Custom Claims queda armado en functions/ por si en algún
+// momento conviene activarlo.

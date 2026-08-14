@@ -6,15 +6,22 @@ contiene las **Fases 1 a 5** del plan de trabajo, es decir el plan completo:
 esqueleto con identidad institucional y roles (Fase 1), el formulario de
 boleta del inspector con cámara/GPS/firma y guardado offline (Fase 2), el
 panel de escritorio con listado de multas, filtros, ficha de detalle y
-gestión de usuarios (Fase 3), el mapa en tiempo real (Fase 4), y el
-endurecimiento de seguridad con Custom Claims + marca de agua en fotos +
-boleta imprimible/PDF + auditoría (Fase 5).
+gestión de usuarios (Fase 3), el mapa en tiempo real (Fase 4), y marca de
+agua en fotos + boleta imprimible/PDF + auditoría (Fase 5).
+
+> Corre **100% gratis, sin cargar tarjeta**: por decisión explícita, el
+> proyecto usa solo el plan Spark (gratuito) de Firebase. La pieza de
+> Custom Claims/Cloud Functions que endurecería la seguridad del login
+> quedó escrita y documentada, pero **no está activada**, porque eso
+> requiere el plan Blaze (pago por uso) de Firebase, que pide tarjeta aunque
+> el uso real termine costando $0 — ver la sección "Seguridad..." más abajo.
 
 ## Stack
 
 - **Frontend:** React + Vite + Tailwind CSS v4.
-- **Backend:** Firebase (Authentication, Firestore, Storage, Cloud Functions)
-  — sin servidor propio, para poder desplegar 100% en GitHub Pages.
+- **Backend:** Firebase — Authentication, Firestore y Storage, todo en el
+  plan gratuito Spark; sin servidor propio, para poder desplegar 100% en
+  GitHub Pages.
 - **Mapas:** Leaflet + react-leaflet.
 - **Ruteo:** `react-router-dom` con `HashRouter` (no necesita configurar
   rewrites en GitHub Pages).
@@ -61,19 +68,23 @@ esqueleto sin depender de tener ya un proyecto Firebase creado.
    Esto carga el catálogo de infracciones (verificado contra
    `manual_infracciones_transito_canelones.pdf`, 19 códigos) y el usuario
    administrador inicial (cédula `41369542`).
-6. Activar **Cloud Functions** (requiere plan Blaze — el nivel gratuito de
-   Blaze alcanza sin problema para el volumen de un piloto) y desplegar
-   reglas + functions:
+6. Desplegar las reglas de seguridad (esto sí es gratis, no requiere plan
+   Blaze ni tarjeta):
    ```bash
    npm install -g firebase-tools
    firebase login
    firebase use --add   # elegir el proyecto recién creado
-   cd functions && npm install && cd ..
-   firebase deploy --only firestore:rules,storage:rules,functions
+   firebase deploy --only firestore:rules,storage:rules
    ```
-   Las Cloud Functions (`functions/index.js`) son las que verifican la
-   cédula del lado del servidor y firman el rol como Custom Claim — sin este
-   paso, el login no funciona (ver la sección de Fase 5 más abajo).
+
+> **¿Y las Cloud Functions de `functions/`?** No hace falta desplegarlas
+> para que la app funcione — quedaron armadas como una mejora de seguridad
+> opcional para más adelante (Custom Claims), pero requieren pasar el
+> proyecto al plan Blaze de Firebase, que pide cargar una tarjeta. Por
+> decisión explícita, este prototipo no las usa: el login de
+> `AuthContext.jsx` verifica la cédula leyendo `/usuarios` directamente,
+> sin ese paso adicional. Ver la sección "Seguridad..." más abajo si en
+> algún momento quieren activarlas.
 
 ## Desplegar en GitHub Pages
 
@@ -130,11 +141,12 @@ compila la app y la publica sola.
 4. De ahí en adelante, cada push a `main` vuelve a desplegar solo.
 
 > **Nota:** este workflow solo compila y publica el frontend estático en
-> GitHub Pages. Las Cloud Functions (`functions/`) y las reglas de
-> Firestore/Storage se despliegan aparte, a mano, con
-> `firebase deploy --only functions,firestore:rules,storage:rules` desde tu
+> GitHub Pages. Las reglas de Firestore/Storage se despliegan aparte, a
+> mano, con `firebase deploy --only firestore:rules,storage:rules` desde tu
 > máquina (paso 6 de "Crear el proyecto Firebase" más arriba) — no forman
-> parte de este pipeline.
+> parte de este pipeline. (Las Cloud Functions de `functions/` no se
+> despliegan porque no están en uso — ver la sección "Seguridad..." más
+> abajo.)
 
 ### Método B — Manual desde tu máquina
 
@@ -166,16 +178,16 @@ src/
                  idb.js (IndexedDB: borrador + cola), media.js (UUID, compresión
                  y marca de agua de fotos), sync.js (subida a Storage + doc en
                  Firestore + evento de auditoría), multas.js (listar/filtrar/
-                 actualizar estado + auditoría), usuarios.js (llama a las Cloud
-                 Functions de gestión de usuarios), auditoria.js (registrar/
-                 listar eventos), tracking.js (ubicación en vivo del inspector),
+                 actualizar estado + auditoría), usuarios.js (alta/edición/baja
+                 de funcionarios + auditoría), auditoria.js (registrar/listar
+                 eventos), tracking.js (ubicación en vivo del inspector),
                  useToast.js
   data/         infracciones.js — catálogo bundleado en la app (funciona offline
                  desde la primera carga, no depende de una consulta a Firestore);
                  multasDemo.js, usuarios (dentro de lib/usuarios.js) — datos de
                  ejemplo cuando Firebase no está configurado, solo para
                  previsualizar el panel, no persisten nada
-  context/      AuthContext.jsx (login vía Cloud Function, Custom Claims, sesión)
+  context/      AuthContext.jsx (login por cédula contra /usuarios, sesión)
   components/   Header.jsx, ProtectedRoute.jsx, Toast.jsx,
                  InfraccionPicker.jsx, CameraCapture.jsx (fotos con marca de
                  agua), GeoCapture.jsx, SignaturePad.jsx
@@ -193,12 +205,13 @@ src/
       MapaEnVivo.jsx   mapa en tiempo real (Fase 4)
       Boleta.jsx       boleta imprimible / exportable a PDF vía window.print() (Fase 5)
       Auditoria.jsx    historial de eventos, solo Administrador (Fase 5)
-functions/       Cloud Functions: login (verifica cédula + firma Custom Claims),
-                  gestionarUsuario, cambiarActivoUsuario (Fase 5)
+functions/       Cloud Functions con Custom Claims (login, gestionarUsuario,
+                  cambiarActivoUsuario) — escritas y listas, pero NO
+                  desplegadas ni en uso: requieren plan Blaze (ver más abajo)
 scripts/seed/    catálogo de infracciones + usuario admin + script de carga
-firestore.rules  storage.rules      reglas de seguridad basadas en Custom
-                                     Claims (multas, usuarios, ubicaciones y
-                                     auditoría — Fase 5)
+firestore.rules  storage.rules      reglas de seguridad (multas, usuarios,
+                                     ubicaciones y auditoría) para sesiones
+                                     autenticadas, sin Custom Claims
 ```
 
 ## Módulo del inspector (Fase 2)
@@ -298,36 +311,52 @@ interruptor de ubicación del inspector (con el aviso correcto en modo demo).
 
 ## Seguridad, auditoría y boleta imprimible (Fase 5)
 
-### Custom Claims — la limitación de seguridad de las Fases 1-4 queda cerrada
+### ⚠️ Limitación de seguridad conocida (a resolver antes de producción)
 
-Hasta la Fase 4, el "rol" de cada sesión era lo que el cliente decía que
-era: cualquiera autenticado de forma anónima podía, en teoría, llamar a
-Firestore directamente y escribir donde las reglas solo pedían
-`request.auth != null`. Esto se cierra con tres Cloud Functions
-(`functions/index.js`, requieren plan Blaze):
+El login es **solo por cédula, sin contraseña**, y el cliente se autentica de
+forma anónima ante Firebase. Las reglas de Firestore (`firestore.rules`) no
+tienen forma de verificar del lado del servidor "quién dice ser quién" —
+solo exigen `request.auth != null`, es decir, "estar autenticado" (lo que
+incluye a cualquier sesión anónima). El rol de cada sesión (Inspector,
+Administrativo, Supervisor, Administrador) es lo que el cliente lee de
+`/usuarios` y guarda en `localStorage`; la interfaz respeta ese rol (qué
+pantallas y botones muestra), pero **nada a nivel de reglas impide que
+alguien llame a Firestore directamente y escriba donde no debería**, sin
+pasar por la interfaz.
 
-- **`login`** — recibe la cédula, la valida contra `/usuarios` del lado del
-  servidor, y si es válida y está activa **firma el rol como Custom Claim**
-  en el token de Firebase Auth de esa sesión anónima. El cliente
-  (`AuthContext.jsx`) llama a esta function tanto al loguearse como al
-  restaurar sesión en cada carga de página — así el rol vive en un token
-  que el cliente no puede fabricar ni editar.
+Esto es una decisión consciente, no un descuido: la solución técnica
+correcta —**Custom Claims**, que un servidor firme el rol dentro del token
+de sesión, para que las reglas puedan exigir
+`request.auth.token.rol == 'Administrador'` en vez de solo
+`request.auth != null`— **ya está escrita** (ver el punto siguiente), pero
+requiere Cloud Functions, y activar Cloud Functions exige pasar el proyecto
+de Firebase al plan Blaze (pago por uso), que pide cargar una tarjeta aunque
+el uso real de un piloto termine costando $0. Por eso, mientras el proyecto
+sea un prototipo/piloto sin datos reales sensibles, se optó por no activar
+esa capa. Antes de manejar datos reales de infractores y de funcionarios en
+producción, conviene reconsiderar esto — ver el punto de abajo para cómo
+activarlo cuando llegue el momento.
+
+### Custom Claims — escrito, no activado
+
+`functions/index.js` tiene tres Cloud Functions ya implementadas y
+revisadas (aunque **no se pudieron probar en tiempo de ejecución** en este
+entorno, por no tener un proyecto Firebase Blaze conectado):
+
+- **`login`** — valida la cédula contra `/usuarios` del lado del servidor y,
+  si es válida y está activa, firma el rol como Custom Claim en el token de
+  la sesión.
 - **`gestionarUsuario`** y **`cambiarActivoUsuario`** — alta/edición y
-  baja/reactivación de funcionarios. Ya no escriben directo a Firestore
-  desde el cliente (las reglas de `/usuarios` lo bloquean a propósito);
-  corren con privilegios de administrador y verifican
-  `request.auth.token.rol === 'Administrador'` antes de tocar nada.
+  baja/reactivación de funcionarios, verificando
+  `request.auth.token.rol === 'Administrador'` antes de escribir.
 
-`firestore.rules` y `storage.rules` quedaron reescritas para confiar en
-`request.auth.token.rol` / `.cedula` en vez de solo en `request.auth != null`
-— por ejemplo, una multa solo se puede editar si el rol del token es
-Administrador o Administrativo, y solo el campo `estadoAdministrativo`.
-
-**Honestidad sobre qué se pudo verificar acá:** el código de las Cloud
-Functions y las reglas se escribió y revisó con cuidado, pero **no se pudo
-probar en tiempo de ejecución contra un proyecto Firebase real** en este
-entorno (no hay uno conectado). Antes de ir a producción, conviene probar el
-flujo de login/roles/permisos contra un proyecto de prueba real.
+Para activarlas el día de mañana: pasar el proyecto a plan Blaze, desplegar
+con `firebase deploy --only functions`, volver a apuntar `AuthContext.jsx`
+y `usuarios.js` a llamarlas por `httpsCallable` en vez de leer/escribir
+Firestore directo (es básicamente deshacer lo de este párrafo), y volver a
+endurecer `firestore.rules`/`storage.rules` para que confíen en
+`request.auth.token.rol`/`.cedula`. Es un cambio acotado si en algún momento
+el organismo decide que vale la pena la tarjeta.
 
 ### Marca de agua en las fotos
 
@@ -348,12 +377,16 @@ navegador moderno ofrece "Guardar como PDF" como destino de impresión.
 
 Cada creación de multa, cambio de estado administrativo, alta/edición de
 usuario y baja/reactivación queda registrada en la colección `auditoria`
-(`/panel/auditoria`, solo Administrador). Las reglas de Firestore no
-permiten editar ni borrar eventos ya escritos — es un historial de solo
-agregar. Los eventos de usuarios se auditan **desde dentro de las Cloud
-Functions** (confiables: el servidor los generó). Los de multas se auditan
-desde el cliente al escribir el documento — reflejan lo que el cliente
-reportó, no algo verificado de forma independiente por el servidor.
+(`/panel/auditoria`, con acceso restringido a Administrador **por la
+interfaz** — ver la limitación de seguridad de arriba, las reglas no lo
+pueden restringir por rol sin Custom Claims). Las reglas de Firestore no
+permiten editar ni borrar eventos ya escritos, eso sí es independiente de
+los claims — es un historial de solo agregar. Todos los eventos se auditan
+desde el cliente al momento de escribir cada documento — reflejan lo que el
+cliente reportó, no algo verificado de forma independiente por el servidor
+(si en algún momento se activan las Cloud Functions del punto anterior, los
+eventos de usuarios pasarían a auditarse desde ahí, que sí sería
+confiable).
 
 ### Pendiente de política, no de código
 
@@ -364,14 +397,13 @@ reportó, no algo verificado de forma independiente por el servidor.
   conservarlas.
 - **Backups de Firestore:** no hay backups automáticos configurados en este
   repositorio (es una tarea de infraestructura del proyecto Firebase, no de
-  la app). Se hacen con
+  la app). Se pueden disparar a mano cuando haga falta con
   [`gcloud firestore export`](https://cloud.google.com/firestore/docs/manage-data/export-import)
-  apuntando a un bucket de Cloud Storage, típicamente disparado por Cloud
-  Scheduler + una Cloud Function (o Cloud Scheduler + Cloud Functions
-  "programadas", `onSchedule` de `firebase-functions/v2/scheduler`) con una
-  frecuencia diaria o semanal según el volumen. Antes de manejar datos
-  reales, hay que configurar esto en la consola de Google Cloud del
-  proyecto.
+  apuntando a un bucket de Cloud Storage — esto funciona en el plan
+  gratuito Spark. Automatizarlo con una frecuencia diaria/semanal (vía Cloud
+  Scheduler + una Cloud Function programada) sí requiere plan Blaze, igual
+  que los Custom Claims de arriba; mientras el proyecto sea un piloto,
+  alcanza con exportar a mano de vez en cuando.
 
 ## Nota sobre el módulo "vehículos abandonados"
 

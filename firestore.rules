@@ -1,76 +1,64 @@
 rules_version = '2';
 
-// Fase 5: reglas endurecidas con Custom Claims.
+// Reglas sin Custom Claims (por decisión explícita: activar Custom Claims
+// requiere Cloud Functions, que a su vez requieren pasar el proyecto de
+// Firebase al plan Blaze — pide tarjeta aunque el uso real de un piloto
+// termine costando $0. Ver functions/index.js y la sección de seguridad del
+// README para la versión con Custom Claims, armada pero no activada).
 //
-// Desde que existen las Cloud Functions login/gestionarUsuario/
-// cambiarActivoUsuario (ver functions/index.js), el rol de cada sesión ya
-// no es "lo que el cliente dice que es" — lo graba el servidor en
-// request.auth.token.rol después de validar la cédula contra /usuarios. Acá
-// abajo esas reglas confían en ese claim para restringir de verdad quién
-// puede leer o escribir qué, cosa que en las Fases 1-4 no era posible.
-//
-// IMPORTANTE: esto requiere que las Cloud Functions estén desplegadas y que
-// el cliente llame a login() y refresque su ID token antes de leer/escribir
-// nada (ver AuthContext.jsx). Mientras tanto, o si se despliegan estas
-// reglas sin las functions, todo va a fallar por falta de claims — no hay
-// fallback a "cualquier autenticado" como en las fases anteriores.
+// Sin un claim de servidor que diga "quién es quién", estas reglas solo
+// pueden exigir "estar autenticado" (incluye sesiones anónimas) — no pueden
+// verificar el rol real de quien escribe. Ese control queda a cargo de la
+// interfaz (qué botones/pantallas se muestran según el rol guardado en
+// localStorage), no de las reglas. Es la limitación de seguridad conocida
+// del proyecto: cualquier sesión autenticada, técnicamente, podría llamar a
+// Firestore directamente y saltarse la interfaz. Aceptable para un
+// prototipo/piloto; antes de manejar datos reales de producción conviene
+// evaluar activar Custom Claims (y el plan Blaze).
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function rol() { return request.auth.token.rol; }
-    function cedulaSesion() { return request.auth.token.cedula; }
-    function esBackoffice() { return rol() in ['Administrador', 'Supervisor', 'Administrativo']; }
-
-    // Catálogo de infracciones: lectura para cualquier sesión con rol
-    // asignado, sin escritura desde el cliente.
+    // Catálogo de infracciones: lectura para cualquier sesión autenticada,
+    // sin escritura desde el cliente (se carga con el script de seed).
     match /infracciones/{codigo} {
-      allow read: if request.auth != null && rol() != null;
+      allow read: if request.auth != null;
       allow write: if false;
     }
 
-    // Usuarios: cada quien puede leer su propio documento (lo necesita para
-    // ver su nombre/equipo); el backoffice puede leer la lista completa
-    // para los selectores de filtro. Sin escritura directa desde el
-    // cliente — el alta/edición/baja pasan por las Cloud Functions, que
-    // escriben con privilegios de administrador.
+    // Usuarios: lectura y escritura para cualquier sesión autenticada. La
+    // pantalla de gestión de usuarios ya está protegida por rol en la
+    // interfaz (ver App.jsx, ProtectedRoute), pero nada a nivel de regla
+    // impide que alguien llame a Firestore directo — ver nota de arriba.
     match /usuarios/{cedula} {
-      allow read: if request.auth != null && (cedulaSesion() == cedula || esBackoffice());
-      allow write: if false;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
     }
 
-    // Multas: un Inspector solo puede crear boletas propias y ver las
-    // suyas (ahora sí se puede exigir esto, con la cédula verificada en el
-    // token). El backoffice ve y filtra todo. El estado administrativo
-    // (pagada/impugnada/anulada) solo lo cambian Administrador y
-    // Administrativo — Supervisor queda de solo lectura, como pide la
-    // especificación.
+    // Multas: cualquier sesión autenticada puede crear y leer. El estado
+    // administrativo solo se puede tocar mediante un update que además no
+    // toque ningún otro campo — esto sí se puede exigir sin claims.
     match /multas/{multaId} {
-      allow read: if request.auth != null
-                   && (esBackoffice() || (rol() == 'Inspector' && resource.data.inspectorCedula == cedulaSesion()));
-      allow create: if request.auth != null
-                     && rol() == 'Inspector'
-                     && request.resource.data.inspectorCedula == cedulaSesion();
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
       allow update: if request.auth != null
-                     && rol() in ['Administrador', 'Administrativo']
                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estadoAdministrativo']);
       allow delete: if false;
     }
 
-    // Ubicación en vivo: cada inspector solo puede escribir su propio
-    // documento; el backoffice puede leer todos para el mapa.
+    // Ubicación en vivo: cualquier sesión autenticada puede leer y escribir
+    // (el opt-in real lo controla la interfaz del inspector).
     match /ubicaciones/{cedula} {
-      allow read: if request.auth != null && (esBackoffice() || cedulaSesion() == cedula);
-      allow write: if request.auth != null && rol() == 'Inspector' && cedulaSesion() == cedula;
+      allow read, write: if request.auth != null;
     }
 
-    // Auditoría: cualquier sesión con rol puede agregar un evento (el
-    // registro de las acciones que hace el propio cliente — ver la nota en
-    // el README sobre qué tan confiable es esto), pero solo Administrador
-    // puede leer el historial. Sin edición ni borrado, para que sea un
-    // registro de verdad.
+    // Auditoría: cualquier sesión autenticada puede agregar un evento y leer
+    // el historial (sin claims no se puede restringir la lectura a "solo
+    // Administrador" del lado del servidor — la pantalla /panel/auditoria sí
+    // lo hace en la interfaz). Sin edición ni borrado, para que sea un
+    // registro de solo agregar.
     match /auditoria/{eventoId} {
-      allow read: if request.auth != null && rol() == 'Administrador';
-      allow create: if request.auth != null && rol() != null;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
       allow update, delete: if false;
     }
   }
