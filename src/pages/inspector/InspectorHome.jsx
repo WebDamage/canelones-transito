@@ -47,17 +47,22 @@ export default function InspectorHome() {
     if (!pendientes.length) { show('No hay boletas pendientes.', '', 2500); return }
     setSincronizando(true)
     let ok = 0, fail = 0
+    let ultimoError = ''
     for (const it of pendientes) {
       try {
         await sincronizarMulta(it, { cedulaInspector: sesion.cedula })
         await idbPut('cola', { ...it, estado: 'enviado', enviadoEn: new Date().toISOString() })
         ok++
-      } catch (err) { fail++ }
+      } catch (err) {
+        fail++
+        ultimoError = err.message || String(err)
+        console.error('Error al sincronizar boleta', it.uuid, err)
+      }
     }
     setSincronizando(false)
     await cargar()
     if (ok && !fail) show(`✓ ${ok} boleta(s) sincronizada(s)`, 'success')
-    else show(`${ok} enviada(s), ${fail} con error`, fail ? 'error' : 'success', 4000)
+    else show(`${ok} enviada(s), ${fail} con error: ${ultimoError}`, fail ? 'error' : 'success', 7000)
   }
 
   async function eliminar(uuid) {
