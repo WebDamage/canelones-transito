@@ -1,8 +1,14 @@
 rules_version = '2';
 
-// Sin Custom Claims (ver la nota al principio de firestore.rules): no hay
-// forma de verificar el rol real de quien sube un archivo, solo que esté
-// autenticado. Fotos, video y firma de cada boleta viven en multas/{uuid}/*.
+// NO EN USO. Cloud Storage for Firebase quedó descartado a propósito: desde
+// 2024 Google exige pasar el proyecto al plan Blaze (tarjeta) para poder
+// crear el bucket, incluso para uso 100% gratuito — y este proyecto corre
+// sin tarjeta. Las fotos y la firma de cada multa viajan como texto dentro
+// del propio documento de Firestore (ver src/lib/sync.js), no como archivos
+// acá. Este archivo queda documentado por si en algún momento se activa
+// Storage (junto con Blaze y, típicamente, Custom Claims — ver
+// functions/index.js): sin Custom Claims no hay forma de verificar el rol
+// real de quien sube un archivo, solo que esté autenticado.
 service firebase.storage {
   match /b/{bucket}/o {
     match /multas/{uuid}/{archivo} {

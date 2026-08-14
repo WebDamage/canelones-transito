@@ -1,39 +1,30 @@
 import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { ref, uploadString, getDownloadURL } from 'firebase/storage'
-import { db, storage, firebaseReady } from './firebase'
+import { db, firebaseReady } from './firebase'
 import { registrarEvento } from './auditoria'
-
-function dataUrlToStoragePath(uuid, nombre) {
-  return `multas/${uuid}/${nombre}`
-}
-
-async function subirDataUrl(uuid, nombre, dataUrl) {
-  const path = dataUrlToStoragePath(uuid, nombre)
-  const sref = ref(storage, path)
-  await uploadString(sref, dataUrl, 'data_url')
-  return getDownloadURL(sref)
-}
+import { dataUrlSizeMB, PRESUPUESTO_EVIDENCIA_MB } from './media'
 
 /**
- * Sube fotos, video y firma a Storage y escribe el documento de la multa en
- * Firestore. Lanza si algo falla (el llamador decide cómo tratarlo).
+ * Escribe el documento de la multa directo en Firestore — las fotos y la
+ * firma van adentro del propio documento como strings data:URL, sin pasar
+ * por Cloud Storage for Firebase. Es una decisión a propósito, no un
+ * descuido: desde 2024 Google exige pasar el proyecto al plan Blaze (pide
+ * tarjeta) para poder crear el bucket de Storage, incluso para uso 100%
+ * gratuito, y este proyecto corre sin tarjeta. El video NO se sincroniza —
+ * pesa demasiado para el límite de 1 MiB por documento de Firestore, así
+ * que queda solo en el dispositivo que lo grabó (ver CameraCapture.jsx).
+ *
+ * Lanza si algo falla (el llamador decide cómo tratarlo).
  */
 export async function sincronizarMulta(multa, { cedulaInspector } = {}) {
   if (!firebaseReady) throw new Error('Firebase no está configurado todavía (ver .env.example).')
 
-  const fotosUrls = []
-  for (let i = 0; i < (multa.fotos || []).length; i++) {
-    fotosUrls.push(await subirDataUrl(multa.uuid, `foto_${i + 1}.jpg`, multa.fotos[i]))
-  }
-
-  let videoUrl = null
-  if (multa.video) {
-    videoUrl = await subirDataUrl(multa.uuid, 'video.webm', multa.video)
-  }
-
-  let firmaUrl = null
-  if (multa.firma) {
-    firmaUrl = await subirDataUrl(multa.uuid, 'firma.png', multa.firma)
+  const pesoFotos = (multa.fotos || []).reduce((acc, f) => acc + dataUrlSizeMB(f), 0)
+  const pesoFirma = dataUrlSizeMB(multa.firma)
+  if (pesoFotos + pesoFirma > PRESUPUESTO_EVIDENCIA_MB) {
+    // No debería pasar casi nunca: CameraCapture.jsx ya frena esto al
+    // agregar fotos. Queda como resguardo por si una boleta vieja (guardada
+    // antes de este límite) intenta sincronizar.
+    throw new Error('Las fotos de esta boleta pesan demasiado para guardar en la base de datos gratuita. Sacá alguna foto e intentá de nuevo.')
   }
 
   const payload = {
@@ -43,9 +34,9 @@ export async function sincronizarMulta(multa, { cedulaInspector } = {}) {
     infractor: multa.infractor,
     geolocalizacion: multa.geo,
     observaciones: multa.observaciones || '',
-    fotosUrls,
-    videoUrl,
-    firmaUrl,
+    fotosUrls: multa.fotos || [],
+    videoUrl: null,
+    firmaUrl: multa.firma || null,
     inspectorCedula: cedulaInspector || multa.inspectorCedula || null,
     equipo: multa.equipo || null,
     estado: 'sincronizada',
@@ -60,5 +51,5 @@ export async function sincronizarMulta(multa, { cedulaInspector } = {}) {
     { uuid: multa.uuid, placa: multa.vehiculo?.placa, codigo: multa.infraccion?.codigo },
     { cedula: payload.inspectorCedula, nombre: multa.inspectorNombre },
   )
-  return { fotosUrls, videoUrl, firmaUrl }
+  return { fotosUrls: payload.fotosUrls, videoUrl: null, firmaUrl: payload.firmaUrl }
 }

@@ -19,9 +19,9 @@ agua en fotos + boleta imprimible/PDF + auditoría (Fase 5).
 ## Stack
 
 - **Frontend:** React + Vite + Tailwind CSS v4.
-- **Backend:** Firebase — Authentication, Firestore y Storage, todo en el
-  plan gratuito Spark; sin servidor propio, para poder desplegar 100% en
-  GitHub Pages.
+- **Backend:** Firebase — solo Authentication y Firestore, ambos en el plan
+  gratuito Spark; sin servidor propio, para poder desplegar 100% en GitHub
+  Pages.
 - **Mapas:** Leaflet + react-leaflet.
 - **Ruteo:** `react-router-dom` con `HashRouter` (no necesita configurar
   rewrites en GitHub Pages).
@@ -32,8 +32,17 @@ Los tres documentos de referencia de este proyecto pedían cosas distintas:
 uno un backend Node/Express, otro NestJS + PostgreSQL, y un tercero Firebase.
 Los dos primeros son incompatibles con el requisito, presente en los tres
 documentos, de desplegar en GitHub Pages (que solo sirve archivos estáticos).
-Firebase resuelve esto: da autenticación, base de datos y almacenamiento de
-archivos sin necesidad de un servidor propio.
+Firebase resuelve esto: da autenticación y base de datos sin necesidad de un
+servidor propio.
+
+**Nota sobre Cloud Storage for Firebase:** no se usa a propósito. Desde
+2024, Google exige pasar el proyecto al plan Blaze (pago por uso, pide
+tarjeta) para poder crear el bucket de Storage — incluso si el uso real
+termina siendo $0. Como este proyecto corre sin tarjeta, las fotos y la
+firma de cada multa se guardan como texto (`data:` URL) directo dentro del
+documento de Firestore en vez de subirse como archivos aparte — ver la nota
+completa en `src/lib/sync.js` y la sección "Fotos, video y el límite de
+Firestore" más abajo.
 
 ## Puesta en marcha local
 
@@ -54,7 +63,10 @@ esqueleto sin depender de tener ya un proyecto Firebase creado.
 2. Activar **Authentication** → método "Anónimo" (se usa como transporte
    interno; el control de acceso real es la cédula — ver limitación de
    seguridad más abajo).
-3. Activar **Firestore Database** (modo producción) y **Storage**.
+3. Activar **Firestore Database** (modo producción). **No hace falta activar
+   Storage** — de hecho, no lo actives: desde la pantalla de Storage, Google
+   va a pedir pasar a plan Blaze (tarjeta) para poder crear el bucket,
+   incluso antes de subir un solo archivo. Esta app no lo necesita.
 4. Configuración del proyecto → Tus apps → Agregar app web → copiar el config
    a `.env` (ver `.env.example`).
 5. Cargar los datos iniciales:
@@ -69,12 +81,13 @@ esqueleto sin depender de tener ya un proyecto Firebase creado.
    `manual_infracciones_transito_canelones.pdf`, 19 códigos) y el usuario
    administrador inicial (cédula `41369542`).
 6. Desplegar las reglas de seguridad (esto sí es gratis, no requiere plan
-   Blaze ni tarjeta):
+   Blaze ni tarjeta). **Ojo:** el comando es solo `firestore:rules` — no
+   agregar `,storage:rules`, porque el bucket de Storage nunca se crea:
    ```bash
    npm install -g firebase-tools
    firebase login
    firebase use --add   # elegir el proyecto recién creado
-   firebase deploy --only firestore:rules,storage:rules
+   firebase deploy --only firestore:rules
    ```
 
 > **¿Y las Cloud Functions de `functions/`?** No hace falta desplegarlas
@@ -141,12 +154,11 @@ compila la app y la publica sola.
 4. De ahí en adelante, cada push a `main` vuelve a desplegar solo.
 
 > **Nota:** este workflow solo compila y publica el frontend estático en
-> GitHub Pages. Las reglas de Firestore/Storage se despliegan aparte, a
-> mano, con `firebase deploy --only firestore:rules,storage:rules` desde tu
-> máquina (paso 6 de "Crear el proyecto Firebase" más arriba) — no forman
-> parte de este pipeline. (Las Cloud Functions de `functions/` no se
-> despliegan porque no están en uso — ver la sección "Seguridad..." más
-> abajo.)
+> GitHub Pages. Las reglas de Firestore se despliegan aparte, a mano, con
+> `firebase deploy --only firestore:rules` desde tu máquina (paso 6 de
+> "Crear el proyecto Firebase" más arriba) — no forman parte de este
+> pipeline. (Ni Storage ni las Cloud Functions de `functions/` están en
+> uso — ver la sección "Seguridad..." más abajo.)
 
 ### Método B — Manual desde tu máquina
 
@@ -176,8 +188,9 @@ la configuración del repositorio.
 src/
   lib/          firebase.js (config + init), cedula.js (validación INE),
                  idb.js (IndexedDB: borrador + cola), media.js (UUID, compresión
-                 y marca de agua de fotos), sync.js (subida a Storage + doc en
-                 Firestore + evento de auditoría), multas.js (listar/filtrar/
+                 agresiva + marca de agua de fotos, presupuesto de peso),
+                 sync.js (escribe la multa directo en Firestore, fotos/firma
+                 incluidas + evento de auditoría), multas.js (listar/filtrar/
                  actualizar estado + auditoría), usuarios.js (alta/edición/baja
                  de funcionarios + auditoría), auditoria.js (registrar/listar
                  eventos), tracking.js (ubicación en vivo del inspector),
@@ -209,9 +222,9 @@ functions/       Cloud Functions con Custom Claims (login, gestionarUsuario,
                   cambiarActivoUsuario) — escritas y listas, pero NO
                   desplegadas ni en uso: requieren plan Blaze (ver más abajo)
 scripts/seed/    catálogo de infracciones + usuario admin + script de carga
-firestore.rules  storage.rules      reglas de seguridad (multas, usuarios,
-                                     ubicaciones y auditoría) para sesiones
-                                     autenticadas, sin Custom Claims
+firestore.rules  reglas de seguridad (multas, usuarios, ubicaciones y
+                  auditoría) para sesiones autenticadas, sin Custom Claims
+storage.rules    NO en uso — Storage no está activado (ver "Seguridad..." abajo)
 ```
 
 ## Módulo del inspector (Fase 2)
@@ -219,9 +232,10 @@ firestore.rules  storage.rules      reglas de seguridad (multas, usuarios,
 El botón "+ Nueva infracción" abre un formulario de 4 pasos, pensado para
 completarse con el dedo y con poca o ninguna señal:
 
-1. **Vehículo y evidencia** — matrícula, tipo/marca/modelo/color, fotos
-   (comprimidas automáticamente a JPEG ~1600px, igual que en la otra app del
-   organismo) y un video corto opcional.
+1. **Vehículo y evidencia** — matrícula, tipo/marca/modelo/color, hasta 5
+   fotos (comprimidas automáticamente a JPEG ~1100px, con un tope de peso
+   total — ver "Fotos, video y el límite de Firestore" más abajo) y un video
+   corto opcional que **no se sube al panel**, queda solo en el dispositivo.
 2. **Infracción e infractor** — buscador del catálogo (código, descripción,
    gravedad) y datos de la persona infractora si corresponde.
 3. **Ubicación** — GPS automático con alerta si la precisión es mala
@@ -246,7 +260,8 @@ Para Administrativo, Supervisor y Administrador. Muestra métricas simples
 (multas de hoy/del mes/totales, equipos con multas), un listado filtrable
 por fecha, inspector, equipo, código de infracción y estado administrativo,
 y al hacer clic en una fila, la ficha completa (infracción, vehículo,
-infractor, ubicación, fotos, video, firma).
+infractor, ubicación, fotos, firma — el video no llega al panel, ver
+"Fotos, video y el límite de Firestore" más abajo).
 
 El estado administrativo de cada multa (**En proceso / Pagada / Impugnada /
 Anulada**) se puede cambiar desde la ficha — Administrativo y Administrador
@@ -357,6 +372,38 @@ Firestore directo (es básicamente deshacer lo de este párrafo), y volver a
 endurecer `firestore.rules`/`storage.rules` para que confíen en
 `request.auth.token.rol`/`.cedula`. Es un cambio acotado si en algún momento
 el organismo decide que vale la pena la tarjeta.
+
+### Fotos, video y el límite de Firestore (por qué no hay Cloud Storage)
+
+Igual que con Custom Claims, hay una segunda pieza de Firebase que este
+proyecto **decidió no usar**: Cloud Storage for Firebase. No es una
+limitación técnica que se nos escapó — al intentar activarla, la consola de
+Firebase pide directamente pasar a plan Blaze (tarjeta) antes de poder
+crear el bucket, incluso para guardar cero bytes. Como el resto del
+proyecto, se optó por quedarse en Spark.
+
+La solución: las fotos y la firma de cada boleta se guardan como texto
+(`data:` URL, es decir la imagen codificada en base64) **dentro del mismo
+documento de Firestore** de la multa, en vez de subirse como archivos
+aparte a un bucket. Esto tiene un costado real a tener en cuenta:
+Firestore rechaza cualquier documento que supere **1 MiB**. Para no chocar
+con eso:
+
+- Las fotos se comprimen más agresivo que antes (máx. 1100px de lado mayor,
+  JPEG calidad 65% — sigue siendo perfectamente legible para ver una
+  matrícula o la escena, `src/lib/media.js`).
+- Hay un tope de **5 fotos por boleta** y un presupuesto de peso total
+  (~0.85 MB) que `CameraCapture.jsx` controla mientras el inspector va
+  sacando fotos — si una foto no entra, avisa en el momento y no dejar
+  agregar más, en vez de fallar recién al sincronizar.
+- **El video no se sincroniza a la nube.** Un video de hasta 25MB no tiene
+  forma de entrar en un documento de 1 MiB, así que queda guardado
+  únicamente en el dispositivo que lo grabó (en el IndexedDB local, igual
+  que el resto del borrador) — el panel de escritorio no lo va a mostrar.
+  Si el organismo necesita que el video llegue al panel, las opciones son:
+  activar Cloud Storage (plan Blaze) más adelante, o sumar un servicio de
+  terceros con capa gratuita (por ejemplo Cloudinary) — ninguna de las dos
+  está implementada hoy.
 
 ### Marca de agua en las fotos
 

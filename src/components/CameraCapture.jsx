@@ -1,7 +1,8 @@
 import { useRef } from 'react'
-import { compressImage, fileToDataUrl, dataUrlSizeMB, watermarkDataUrl } from '../lib/media'
+import { compressImage, fileToDataUrl, dataUrlSizeMB, watermarkDataUrl, PRESUPUESTO_EVIDENCIA_MB } from '../lib/media'
 
 const MIN_FOTOS_RECOMENDADO = 3
+const MAX_FOTOS = 5
 
 /**
  * Captura de fotos (múltiples, comprimidas a JPEG y con marca de agua de
@@ -10,6 +11,11 @@ const MIN_FOTOS_RECOMENDADO = 3
  * preview en vivo con getUserMedia) porque funciona de forma más pareja
  * entre Android/iOS dentro de una PWA y no requiere manejar permisos de
  * cámara en pantalla completa a mano.
+ *
+ * Las fotos viajan como string dentro del documento de Firestore de la
+ * multa (no se usa Cloud Storage for Firebase — ver la nota en sync.js), así
+ * que hay un tope de cantidad y de peso total para no pisar el límite de
+ * 1 MiB por documento.
  */
 export default function CameraCapture({ fotos, onFotosChange, video, onVideoChange, placa }) {
   const fotoInputRef = useRef(null)
@@ -18,18 +24,28 @@ export default function CameraCapture({ fotos, onFotosChange, video, onVideoChan
   async function handleFotos(e) {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
-    const nuevas = []
+    const nuevas = [...fotos]
+    let peso = nuevas.reduce((acc, f) => acc + dataUrlSizeMB(f), 0)
+    let saltadas = 0
     for (const f of files) {
+      if (nuevas.length >= MAX_FOTOS) { saltadas++; continue }
       const comprimida = await compressImage(f)
       // La matrícula se estampa solo si ya se cargó al momento de sacar la
       // foto (en el formulario se pide antes, pero nada obliga el orden);
       // si todavía no está, se estampa solo fecha/hora.
       const lineas = [new Date().toLocaleString('es-UY')]
       lineas.push(placa ? `Matrícula: ${placa}` : 'Intendencia de Canelones · Tránsito')
-      nuevas.push(await watermarkDataUrl(comprimida, lineas))
+      const marcada = await watermarkDataUrl(comprimida, lineas)
+      const pesoNueva = dataUrlSizeMB(marcada)
+      if (peso + pesoNueva > PRESUPUESTO_EVIDENCIA_MB) { saltadas++; continue }
+      nuevas.push(marcada)
+      peso += pesoNueva
     }
-    onFotosChange([...fotos, ...nuevas])
+    onFotosChange(nuevas)
     e.target.value = ''
+    if (saltadas > 0) {
+      alert(`Se agregaron ${nuevas.length - fotos.length} foto(s). ${saltadas} no entraron: se llegó al máximo de ${MAX_FOTOS} fotos o al peso total que permite guardar gratis en la base de datos. Sacá alguna foto para poder agregar otra.`)
+    }
   }
 
   async function handleVideo(e) {
@@ -89,12 +105,15 @@ export default function CameraCapture({ fotos, onFotosChange, video, onVideoChan
       <div className="flex items-center justify-between mb-2 mt-4">
         <label className="text-sm font-medium" style={{ color: 'var(--color-ink-soft)' }}>Video (opcional, máx. ~30s)</label>
       </div>
+      <p className="text-xs mb-2" style={{ color: 'var(--color-ink-muted)' }}>
+        ⚠ El video queda guardado solo en este dispositivo — no se sube al panel de escritorio (ver README).
+      </p>
       {video ? (
         <div className="flex items-center gap-3">
           <video src={video} controls className="w-32 rounded-md border" style={{ borderColor: 'var(--color-border)' }} />
           <button type="button" onClick={() => onVideoChange('')} className="btn btn-outline text-xs !min-h-0 !py-2">Quitar video</button>
           {dataUrlSizeMB(video) > 8 && (
-            <span className="text-xs" style={{ color: 'var(--color-warning)' }}>⚠ Pesa {dataUrlSizeMB(video).toFixed(1)}MB, puede tardar al sincronizar</span>
+            <span className="text-xs" style={{ color: 'var(--color-warning)' }}>⚠ Pesa {dataUrlSizeMB(video).toFixed(1)}MB</span>
           )}
         </div>
       ) : (

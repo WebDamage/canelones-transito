@@ -7,16 +7,20 @@ export function nuevoUUID() {
   })
 }
 
-// Reduce a máx. 1600px de lado mayor y JPEG 82% — para que el guardado local,
-// la sincronización y Firebase Storage no exploten de peso (mismo criterio
-// que la app de relevamiento de viviendas del organismo).
+// Reduce a máx. 1100px de lado mayor y JPEG 65% — más agresivo que un simple
+// "achicar la foto": como no se usa Cloud Storage for Firebase (pide plan
+// Blaze incluso para uso gratuito, ver sync.js), las fotos viajan como
+// string dentro del propio documento de Firestore, que tiene un límite duro
+// de 1 MiB por documento. Con esta compresión, unas 4-5 fotos entran
+// cómodas; igual hay un control de presupuesto total en CameraCapture.jsx y
+// sync.js por si el contenido de la foto (mucho detalle) la deja pesada.
 export function compressImage(file) {
   return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = (e) => {
       const img = new Image()
       img.onload = () => {
-        const MAX = 1600
+        const MAX = 1100
         let w = img.width
         let h = img.height
         if (Math.max(w, h) > MAX) {
@@ -28,7 +32,7 @@ export function compressImage(file) {
         c.width = w
         c.height = h
         c.getContext('2d').drawImage(img, 0, 0, w, h)
-        resolve(c.toDataURL('image/jpeg', 0.82))
+        resolve(c.toDataURL('image/jpeg', 0.65))
       }
       img.onerror = () => resolve(e.target.result)
       img.src = e.target.result
@@ -66,7 +70,7 @@ export function watermarkDataUrl(dataUrl, lines) {
         ctx.fillText(line, padX, img.height - barH + padX / 2 + i * lineH)
       })
 
-      resolve(c.toDataURL('image/jpeg', 0.85))
+      resolve(c.toDataURL('image/jpeg', 0.7))
     }
     img.onerror = () => resolve(dataUrl)
     img.src = dataUrl
@@ -87,3 +91,8 @@ export function dataUrlSizeMB(dataUrl) {
   const base64 = dataUrl.split(',')[1] || ''
   return (base64.length * 0.75) / (1024 * 1024)
 }
+
+// Cuánto pueden pesar, en total, las fotos + firma de una boleta antes de
+// arriesgarse a pisar el límite de 1 MiB por documento de Firestore (se deja
+// margen para el resto de los campos y para el overhead de Firestore).
+export const PRESUPUESTO_EVIDENCIA_MB = 0.85

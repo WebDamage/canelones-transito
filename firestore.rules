@@ -36,7 +36,11 @@ service cloud.firestore {
 
     // Multas: cualquier sesión autenticada puede crear y leer. El estado
     // administrativo solo se puede tocar mediante un update que además no
-    // toque ningún otro campo — esto sí se puede exigir sin claims.
+    // toque ningún otro campo — esto sí se puede exigir sin claims. Las
+    // fotos y la firma viajan como texto (data:URL) dentro de este mismo
+    // documento — no se usa Cloud Storage for Firebase (ver sync.js) — así
+    // que Firestore mismo rechaza cualquier escritura que supere 1 MiB por
+    // documento; src/lib/media.js y CameraCapture.jsx ya frenan eso antes.
     match /multas/{multaId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
